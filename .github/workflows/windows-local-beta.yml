@@ -1,0 +1,302 @@
+name: Windows Local Beta Builder
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contextid-windows-local-beta
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps:
+      - name: Check out frozen private source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: EpochTime-AI/ContextID
+          ref: 04acd92c8e9cfc71e98cfc31fa2fb51a948199df
+          ssh-key: ${{ secrets.CONTEXTID_SOURCE_DEPLOY_KEY }}
+          persist-credentials: false
+          path: source
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda
+        with:
+          version: "11.11.0"
+          run_install: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: source/pnpm-lock.yaml
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: |
+            source/apps/desktop/go.sum
+            source/services/core/go.sum
+      - name: Restore validated SQLCipher prefix
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: source/.cache/contextid/sqlcipher
+          key: windows-local-beta-sqlcipher-4.16.0-openssl3-${{ hashFiles('source/infra/sqlcipher/**', 'source/scripts/sqlcipher/**') }}
+      - name: Install Windows build dependencies
+        shell: pwsh
+        run: |
+          choco install nsis --version=3.12.0 --yes --no-progress
+          "C:\Program Files (x86)\NSIS" |
+            Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - uses: msys2/setup-msys2@40677d36a502eb2cf0fb808cc9dec31bf6152638
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make autoconf automake libtool python curl
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-ripgrep
+      - name: Install frozen workspace dependencies
+        working-directory: source
+        shell: bash
+        run: pnpm install --frozen-lockfile
+      - name: Verify Windows install and package contracts
+        working-directory: source
+        shell: pwsh
+        run: |
+          ./scripts/install/browser-native-host-windows.contract.ps1
+          ./scripts/install/contextid-companion-uninstall-windows.contract.ps1
+      - name: Build and test Windows Local Beta
+        working-directory: source
+        shell: msys2 {0}
+        run: |
+          set -eu
+          actual_sha=$(git rev-parse HEAD)
+          test "$actual_sha" = 04acd92c8e9cfc71e98cfc31fa2fb51a948199df
+          registry=$(node --input-type=module <<'NODE'
+          import {
+            loadLocalBetaIdentityRegistry,
+            toReleaseIdentityRegistry
+          } from "./scripts/release/build-local-beta.mjs"
+
+          const beta = await loadLocalBetaIdentityRegistry()
+          process.stdout.write(JSON.stringify(toReleaseIdentityRegistry(beta)))
+          NODE
+          )
+          export CONTEXTID_BROWSER_IDENTITIES_JSON="$registry"
+          native_root="$(cygpath -u "$RUNNER_TEMP")/contextid-windows-beta-$GITHUB_RUN_ID"
+          test ! -e "$native_root"
+          mkdir "$native_root"
+          chmod 700 "$native_root"
+          gocache="$native_root/go-build-cache"
+          mkdir "$gocache"
+          chmod 700 "$gocache"
+          export GOCACHE="$(cygpath -w "$gocache")"
+          policy="$native_root/browser-identities.json"
+          node scripts/release/materialize-native-policy.mjs --output "$policy"
+
+          ./scripts/verify/go-format-check.sh apps/desktop
+          ./scripts/verify/go-format-check.sh services/core/client/localcore
+          ./scripts/verify/go-format-check.sh services/core/cmd/contextid-local-core
+          ./scripts/verify/go-format-check.sh services/core/cmd/contextid-browser-host
+          pnpm run verify:desktop
+          (cd apps/desktop && go test -count=1 ./... && go vet ./...)
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+            -File "$(cygpath -w scripts/release/platform-signing-windows.contract.ps1)"
+
+          cache_root="$(cygpath -u "$GITHUB_WORKSPACE")/source/.cache/contextid/sqlcipher"
+          ensure_output=$(scripts/sqlcipher/ensure-native-prefix.sh --cache-root "$cache_root")
+          prefix=$(printf '%s\n' "$ensure_output" | sed -n 's/^PREFIX=//p' | tail -n 1)
+          test -n "$prefix"
+          vec_work="$native_root/sqlite-vec-work"
+          vec_prefix="$native_root/sqlite-vec-prefix"
+          CPATH="$prefix/include${CPATH:+:$CPATH}" \
+            scripts/sqlite-vec/build-native-unix.sh --work-dir "$vec_work" --prefix "$vec_prefix"
+          export PKG_CONFIG_PATH="$vec_prefix/lib/pkgconfig:$prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+          CONTEXTID_BROWSER_IDENTITIES_FILE="$policy" CONTEXTID_DESKTOP_NSIS=1 \
+            make build-desktop SQLCIPHER_PREFIX="$prefix"
+          make verify-desktop-e2e SQLCIPHER_PREFIX="$prefix"
+
+          node apps/extension/scripts/build-browser.mjs build chrome --release
+          node apps/extension/scripts/build-browser.mjs package chrome --release
+          node apps/extension/scripts/build-browser.mjs build edge --release
+          node apps/extension/scripts/build-browser.mjs package edge --release
+
+          companion_root="$(cygpath -u "$RUNNER_TEMP")/contextid-companion-build"
+          test ! -e "$companion_root"
+          mkdir "$companion_root"
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+            -File "$(cygpath -w scripts/build/companion-path-trust.ps1)" \
+            -Mode ProtectPrivate -Path "$(cygpath -w "$companion_root")"
+          companion_payload="$companion_root/payload"
+          companion_output="$companion_root/output"
+          mkdir "$companion_payload" "$companion_output"
+          CONTEXTID_SQLCIPHER_PREFIX="$prefix" CONTEXTID_BROWSER_IDENTITIES_FILE="$policy" \
+            scripts/build/companion-payload.sh windows/amd64 "$companion_payload"
+          scripts/build/companion-package.sh windows/amd64 "$companion_output" \
+            --payload "$companion_payload"
+          version=$(node -p 'require("./release/version.json").version')
+          test -s "$companion_output/ContextID-Companion-$version-Windows-x64.exe"
+      - name: Smoke installers and stage release bundle
+        working-directory: source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = (Get-Content -LiteralPath "release/version.json" -Raw |
+            ConvertFrom-Json).version
+          $desktopSource = Join-Path $env:GITHUB_WORKSPACE (
+            "source\apps\desktop\build\bin\ContextID-amd64-installer.exe"
+          )
+          $companionSource = Join-Path $env:RUNNER_TEMP (
+            "contextid-companion-build\output\ContextID-Companion-{0}-Windows-x64.exe" -f
+              $version
+          )
+          foreach ($source in @($desktopSource, $companionSource)) {
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+              throw "windows_local_beta_installer_missing"
+            }
+            if ((Get-AuthenticodeSignature -LiteralPath $source).Status -cne "NotSigned") {
+              throw "windows_local_beta_signature_state_invalid"
+            }
+          }
+
+          function Invoke-Nsis([string]$Path, [string[]]$Arguments = @("/S")) {
+            $process = Start-Process -FilePath $Path -ArgumentList $Arguments -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "windows_local_beta_nsis_failed" }
+          }
+          function Invoke-ExternalUninstaller([string]$Path, [string]$ProgramDirectory) {
+            $temporaryDirectory = Join-Path $env:RUNNER_TEMP (
+              "contextid-windows-beta-uninstall-{0}" -f [Guid]::NewGuid().ToString("N")
+            )
+            $null = New-Item -ItemType Directory -Path $temporaryDirectory -ErrorAction Stop
+            $copy = Join-Path $temporaryDirectory "Uninstall.exe"
+            try {
+              Copy-Item -LiteralPath $Path -Destination $copy -ErrorAction Stop
+              Invoke-Nsis -Path $copy -Arguments @("/S", "_?=$ProgramDirectory")
+            } finally {
+              if (Test-Path -LiteralPath $copy) { Remove-Item -LiteralPath $copy -Force }
+              if (Test-Path -LiteralPath $temporaryDirectory) {
+                Remove-Item -LiteralPath $temporaryDirectory -Force
+              }
+            }
+          }
+
+          $beta = Get-Content -LiteralPath "release/local-beta-browser-identities.json" -Raw |
+            ConvertFrom-Json
+          $companionProgram = Join-Path $env:ProgramW6432 "ContextID\Companion"
+          Invoke-Nsis -Path $companionSource
+          foreach ($name in @(
+              "contextid-local-core.exe",
+              "contextid-browser-host.exe",
+              "contextid-agent.exe",
+              "contextid-mcp.exe",
+              "Uninstall.exe"
+            )) {
+            if (-not (Test-Path -LiteralPath (Join-Path $companionProgram $name) -PathType Leaf)) {
+              throw "windows_local_beta_companion_payload_missing"
+            }
+          }
+          node scripts/release/native-installed-smoke.mjs --browser chrome `
+            --extension-id $beta.browsers.chrome.expected_id --scope system
+          if ($LASTEXITCODE -ne 0) { throw "windows_local_beta_companion_smoke_failed" }
+          Invoke-ExternalUninstaller `
+            -Path (Join-Path $companionProgram "Uninstall.exe") `
+            -ProgramDirectory $companionProgram
+          if (Test-Path -LiteralPath $companionProgram) {
+            throw "windows_local_beta_companion_uninstall_residue"
+          }
+
+          $desktopProgram = Join-Path $env:ProgramW6432 "EpochTime AI\ContextID"
+          Invoke-Nsis -Path $desktopSource
+          foreach ($name in @(
+              "contextid-desktop.exe",
+              "contextid-local-core.exe",
+              "contextid-browser-host.exe",
+              "native-host\browser-identities.json",
+              "uninstall.exe"
+            )) {
+            if (-not (Test-Path -LiteralPath (Join-Path $desktopProgram $name) -PathType Leaf)) {
+              throw "windows_local_beta_desktop_payload_missing"
+            }
+          }
+          node scripts/release/native-installed-smoke.mjs --browser chrome `
+            --extension-id $beta.browsers.chrome.expected_id --scope user
+          if ($LASTEXITCODE -ne 0) { throw "windows_local_beta_desktop_smoke_failed" }
+          Invoke-ExternalUninstaller `
+            -Path (Join-Path $desktopProgram "uninstall.exe") `
+            -ProgramDirectory $desktopProgram
+          if (Test-Path -LiteralPath $desktopProgram) {
+            throw "windows_local_beta_desktop_uninstall_residue"
+          }
+
+          $output = Join-Path $env:RUNNER_TEMP "contextid-windows-local-beta"
+          if (Test-Path -LiteralPath $output) { throw "windows_local_beta_output_exists" }
+          $null = New-Item -ItemType Directory -Path $output -ErrorAction Stop
+          $desktopName = "ContextID-{0}-Windows-x64-UNSIGNED.exe" -f $version
+          $companionName = "ContextID-Companion-{0}-Windows-x64-Local-Beta-UNSIGNED.exe" -f $version
+          $chromeName = "ContextID-Extension-{0}-Chrome-Local-Beta.zip" -f $version
+          $edgeName = "ContextID-Extension-{0}-Edge-Local-Beta.zip" -f $version
+          $sources = [ordered]@{
+            $desktopName = $desktopSource
+            $companionName = $companionSource
+            $chromeName = (Join-Path $env:GITHUB_WORKSPACE "source\apps\extension\build\chrome-mv3-prod.zip")
+            $edgeName = (Join-Path $env:GITHUB_WORKSPACE "source\apps\extension\build\edge-mv3-prod.zip")
+          }
+          $artifacts = @()
+          foreach ($entry in $sources.GetEnumerator()) {
+            $destination = Join-Path $output $entry.Key
+            Copy-Item -LiteralPath $entry.Value -Destination $destination -ErrorAction Stop
+            $digest = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+            $artifacts += [ordered]@{ name = $entry.Key; sha256 = $digest }
+          }
+          $manifest = [ordered]@{
+            schema_version = 1
+            product = "ContextID"
+            version = $version
+            git_sha = "04acd92c8e9cfc71e98cfc31fa2fb51a948199df"
+            channel = "local_beta"
+            distribution = "public_prerelease"
+            target = "windows/amd64"
+            browsers = @("chrome", "edge")
+            signing = "unsigned"
+            cloud_sync = "disabled"
+            desktop_installer = $desktopName
+            companion_installer = $companionName
+            chrome_extension_id = $beta.browsers.chrome.expected_id
+            edge_extension_id = $beta.browsers.edge.expected_id
+            artifacts = $artifacts
+          }
+          $utf8 = [Text.UTF8Encoding]::new($false)
+          [IO.File]::WriteAllText(
+            (Join-Path $output "windows-local-beta-manifest.json"),
+            ($manifest | ConvertTo-Json -Depth 8),
+            $utf8
+          )
+          $instructions = @(
+            "ContextID $version Windows x64 Local Beta",
+            "",
+            "完整桌面体验：安装 $desktopName，然后加载 Chrome 或 Edge 扩展包。",
+            "仅使用浏览器插件：安装 $companionName，然后加载对应扩展包。",
+            "",
+            "扩展安装：解压 ZIP，在 chrome://extensions 或 edge://extensions 开启开发者模式，",
+            "然后选择加载已解压的扩展程序。",
+            "",
+            "这是未签名预览版，Windows SmartScreen 可能提示未知发布者。",
+            "仅在 SHA-256 与 windows-local-beta-manifest.json 一致时继续。",
+            "云同步暂未启用；本轮只验收本地导入、检索、上下文召回和 Agent 连接。"
+          ) -join [Environment]::NewLine
+          [IO.File]::WriteAllText(
+            (Join-Path $output "START-HERE-Windows.txt"),
+            $instructions,
+            $utf8
+          )
+      - name: Upload Windows Local Beta
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: contextid-windows-local-beta-04acd92c
+          path: ${{ runner.temp }}/contextid-windows-local-beta/
+          if-no-files-found: error
+          retention-days: 14
