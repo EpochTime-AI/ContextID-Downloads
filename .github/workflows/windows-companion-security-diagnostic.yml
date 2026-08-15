@@ -1,0 +1,56 @@
+name: Windows Companion Security Diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Check out frozen private source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: EpochTime-AI/ContextID
+          ref: 810c6dbd248e2ed901bc94ef87b67a6467c0501b
+          token: ${{ secrets.CONTEXTID_SOURCE_TOKEN }}
+          persist-credentials: false
+          path: source
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis --version=3.12.0 --yes --no-progress
+      - name: Run exact trusted-tools initialization
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $source = Join-Path $env:GITHUB_WORKSPACE "source"
+          $payload = Join-Path $env:RUNNER_TEMP "contextid-minimal-payload"
+          $native = Join-Path $payload "native-host"
+          $output = Join-Path $env:RUNNER_TEMP "contextid-minimal-companion.exe"
+          $null = New-Item -ItemType Directory -Path $native -ErrorAction Stop
+          Copy-Item -LiteralPath (
+            Join-Path $source "scripts\install\contextid-companion-uninstall.ps1"
+          ) -Destination (Join-Path $native "contextid-companion-uninstall.ps1")
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          & $makensis /V4 `
+            "-DVERSION=0.0.8" `
+            "-DPAYLOAD_DIR=$payload" `
+            "-DOUTPUT_FILE=$output" `
+            "-DPATH_TRUST_SCRIPT=$(Join-Path $source 'scripts\build\companion-path-trust.ps1')" `
+            (Join-Path $source "packaging\companion\windows\project.nsi")
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $output -PathType Leaf)) {
+            throw "windows_companion_diagnostic_compile_failed"
+          }
+          $process = Start-Process -FilePath $output -ArgumentList "/S" -Wait -PassThru
+          Write-Host "WINDOWS_COMPANION_DIAGNOSTIC_EXIT:$($process.ExitCode)"
+          Write-Host "WINDOWS_COMPANION_DIAGNOSTIC_BASE:$((Test-Path -LiteralPath (Join-Path $env:ProgramW6432 'ContextID')))"
+          Get-ChildItem -LiteralPath $env:ProgramW6432 -Force -Directory `
+            -Filter ".ContextIDCompanionTools-*" -ErrorAction Continue |
+            ForEach-Object { Write-Host "WINDOWS_COMPANION_DIAGNOSTIC_TOOLS:$($_.FullName)" }
+          if ($process.ExitCode -ge 100 -and $process.ExitCode -le 120) {
+            throw "windows_companion_trusted_tools_phase_$($process.ExitCode)"
+          }
+          Write-Host "WINDOWS_COMPANION_TRUSTED_TOOLS_PASSED"
