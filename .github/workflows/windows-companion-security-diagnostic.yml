@@ -19,6 +19,42 @@ jobs:
           token: ${{ secrets.CONTEXTID_SOURCE_TOKEN }}
           persist-credentials: false
           path: source
+      - name: Diagnose ACL helper across PowerShell editions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $source = Join-Path $env:GITHUB_WORKSPACE "source"
+          . (Join-Path $source "scripts\release\windows-path-security.ps1")
+          $root = Join-Path $env:LOCALAPPDATA (
+            "ContextIDPathTrustDiagnostic-{0}" -f [Guid]::NewGuid().ToString("N")
+          )
+          $root = New-ReleaseWindowsPrivateDirectory -LiteralPath $root `
+            -FailureCode "windows_path_trust_diagnostic_setup_failed"
+          try {
+            $payload = Join-Path $root "payload"
+            [void][IO.Directory]::CreateDirectory($payload)
+            $item = Get-Item -LiteralPath $payload -Force
+            Write-Host "WINDOWS_PATH_TRUST_DIAGNOSTIC_METHODS:$($item.PSObject.Methods.Name -contains 'GetAccessControl')|$($item.PSObject.Methods.Name -contains 'SetAccessControl')"
+            try {
+              $acl = [IO.FileSystemAclExtensions]::GetAccessControl([IO.DirectoryInfo]$item)
+              Write-Host "WINDOWS_PATH_TRUST_DIAGNOSTIC_STATIC:$($acl.AreAccessRulesProtected)"
+            } catch {
+              Write-Host "WINDOWS_PATH_TRUST_DIAGNOSTIC_STATIC_ERROR:$($_.Exception.GetType().FullName)"
+            }
+            foreach ($hostPath in @(
+                (Join-Path $PSHOME "pwsh.exe"),
+                "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
+              )) {
+              & $hostPath -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+                -File (Join-Path $source "scripts\build\companion-path-trust.ps1") `
+                -Mode Source -Path $payload
+              Write-Host "WINDOWS_PATH_TRUST_DIAGNOSTIC_HOST:$hostPath|$LASTEXITCODE"
+            }
+          } finally {
+            if (Test-Path -LiteralPath $root) {
+              Remove-Item -LiteralPath $root -Recurse -Force
+            }
+          }
       - name: Install NSIS
         shell: pwsh
         run: choco install nsis --version=3.12.0 --yes --no-progress
