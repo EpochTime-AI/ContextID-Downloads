@@ -303,6 +303,43 @@ jobs:
               throw "windows_local_beta_companion_payload_missing"
             }
           }
+          $userRoot = Join-Path $env:APPDATA "ContextID\local"
+          $runtimeRoot = Join-Path $env:LOCALAPPDATA "ContextID\runtime"
+          $runtimeBytes = [Text.Encoding]::UTF8.GetBytes($runtimeRoot.ToLowerInvariant())
+          $runtimeDigest = [Security.Cryptography.SHA256]::HashData($runtimeBytes)
+          $endpointSuffix = -join $runtimeDigest[0..7].ForEach({ $_.ToString("x2") })
+          $endpoint = "\\.\pipe\contextid-$endpointSuffix"
+          $lifecycle = Join-Path $runtimeRoot "local-core.lifecycle.lock"
+          $maintenance = Join-Path $runtimeRoot "local-core.maintenance"
+          $coreError = Join-Path $env:RUNNER_TEMP "contextid-direct-core.stderr"
+          $directCore = Start-Process `
+            -FilePath (Join-Path $companionProgram "contextid-local-core.exe") `
+            -ArgumentList @(
+              "--root", $userRoot,
+              "--ipc", $endpoint,
+              "--lifecycle-lock", $lifecycle,
+              "--maintenance-marker", $maintenance
+            ) `
+            -RedirectStandardError $coreError -WindowStyle Hidden -PassThru
+          node scripts/release/native-installed-smoke.mjs --browser chrome `
+            --extension-id $beta.browsers.chrome.expected_id --scope system
+          $directCompanionSmoke = $LASTEXITCODE
+          Write-Host "WINDOWS_COMPANION_DIRECT_SMOKE:$directCompanionSmoke"
+          Write-Host "WINDOWS_COMPANION_DIRECT_EXITED:$($directCore.HasExited)"
+          if ($directCore.HasExited) {
+            Write-Host "WINDOWS_COMPANION_DIRECT_EXIT_CODE:$($directCore.ExitCode)"
+          } else {
+            Stop-Process -Id $directCore.Id -Force -ErrorAction Stop
+            $directCore.WaitForExit()
+          }
+          if (Test-Path -LiteralPath $coreError -PathType Leaf) {
+            Get-Content -LiteralPath $coreError -ErrorAction Continue |
+              ForEach-Object { Write-Host "WINDOWS_COMPANION_DIRECT_ERROR:$($_)" }
+            Remove-Item -LiteralPath $coreError -Force -ErrorAction Stop
+          }
+          if ($directCompanionSmoke -ne 0) {
+            throw "windows_local_beta_companion_direct_smoke_failed"
+          }
           node scripts/release/native-installed-smoke.mjs --browser chrome `
             --extension-id $beta.browsers.chrome.expected_id --scope system
           $firstCompanionSmoke = $LASTEXITCODE
