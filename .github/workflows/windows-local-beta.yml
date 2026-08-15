@@ -68,6 +68,37 @@ jobs:
         working-directory: source
         shell: pwsh
         run: ./scripts/install/browser-native-host-windows.contract.ps1
+      - name: Verify Windows signing contract
+        working-directory: source
+        shell: pwsh
+        run: |
+          . ./scripts/release/windows-path-security.ps1
+          $trustedRunnerTemp = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA (
+            "ContextIDWindowsBeta-{0}" -f $env:GITHUB_RUN_ID
+          )))
+          $trustedRunnerTemp = New-ReleaseWindowsPrivateDirectory `
+            -LiteralPath $trustedRunnerTemp `
+            -FailureCode 'release_windows_contract_setup_failed'
+          $previousRunnerTemp = $env:RUNNER_TEMP
+          try {
+            $env:RUNNER_TEMP = $trustedRunnerTemp
+            $windowsPowerShell = Join-Path $env:SystemRoot `
+              'System32\WindowsPowerShell\v1.0\powershell.exe'
+            $contractPath = [IO.Path]::GetFullPath(
+              './scripts/release/platform-signing-windows.contract.ps1'
+            )
+            & $windowsPowerShell -NoLogo -NoProfile -NonInteractive `
+              -ExecutionPolicy Bypass `
+              -File $contractPath
+            if ($LASTEXITCODE -ne 0) {
+              throw 'release_windows_signing_contract_failed'
+            }
+          } finally {
+            $env:RUNNER_TEMP = $previousRunnerTemp
+            if (Test-Path -LiteralPath $trustedRunnerTemp -PathType Container) {
+              Remove-Item -LiteralPath $trustedRunnerTemp -Recurse -Force
+            }
+          }
       - name: Build and test Windows Local Beta
         working-directory: source
         shell: msys2 {0}
@@ -106,8 +137,6 @@ jobs:
           ./scripts/verify/go-format-check.sh services/core/cmd/contextid-browser-host
           pnpm run verify:desktop
           (cd apps/desktop && go test -count=1 ./... && go vet ./...)
-          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass \
-            -File "$(cygpath -w scripts/release/platform-signing-windows.contract.ps1)"
 
           cache_root="$(cygpath -u "$GITHUB_WORKSPACE")/source/.cache/contextid/sqlcipher"
           ensure_output=$(scripts/sqlcipher/ensure-native-prefix.sh --cache-root "$cache_root")
