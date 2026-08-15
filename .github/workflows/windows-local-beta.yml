@@ -167,7 +167,7 @@ jobs:
           test -n "$prefix"
           vec_work="$native_root/sqlite-vec-work"
           vec_prefix="$native_root/sqlite-vec-prefix"
-          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+          pwsh.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass \
             -File "$(cygpath -w scripts/sqlite-vec/build-native-windows.ps1)" \
             -WorkDir "$(cygpath -w "$vec_work")" \
             -Prefix "$(cygpath -w "$vec_prefix")"
@@ -184,7 +184,7 @@ jobs:
           companion_root="$(cygpath -u "$RUNNER_TEMP")/contextid-companion-build"
           test ! -e "$companion_root"
           mkdir "$companion_root"
-          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+          pwsh.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass \
             -File "$(cygpath -w scripts/build/companion-path-trust.ps1)" \
             -Mode ProtectPrivate -Path "$(cygpath -w "$companion_root")"
           companion_payload="$companion_root/payload"
