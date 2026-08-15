@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: EpochTime-AI/ContextID
-          ref: 6c22ae65b839ec50acfb10b8e99328ff4d69827f
+          ref: 6f526a42d28a1edd3aea58f0eb5cabccd8dd777e
           token: ${{ secrets.CONTEXTID_SOURCE_TOKEN }}
           persist-credentials: false
           path: source
@@ -129,7 +129,7 @@ jobs:
           go env GOVERSION | grep -Eq '^go1\.24(\.|$)'
           pnpm --version
           actual_sha=$(git rev-parse HEAD)
-          test "$actual_sha" = 6c22ae65b839ec50acfb10b8e99328ff4d69827f
+          test "$actual_sha" = 6f526a42d28a1edd3aea58f0eb5cabccd8dd777e
           registry=$(node --input-type=module <<'NODE'
           import {
             loadLocalBetaIdentityRegistry,
@@ -314,7 +314,7 @@ jobs:
             schema_version = 1
             product = "ContextID"
             version = $version
-            git_sha = "6c22ae65b839ec50acfb10b8e99328ff4d69827f"
+            git_sha = "6f526a42d28a1edd3aea58f0eb5cabccd8dd777e"
             channel = "local_beta"
             distribution = "public_prerelease"
             target = "windows/amd64"
@@ -354,7 +354,7 @@ jobs:
       - name: Upload Windows Local Beta
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: contextid-windows-local-beta-6c22ae65
+          name: contextid-windows-local-beta-6f526a42
           path: ${{ runner.temp }}/contextid-windows-local-beta/
           if-no-files-found: error
           retention-days: 14
