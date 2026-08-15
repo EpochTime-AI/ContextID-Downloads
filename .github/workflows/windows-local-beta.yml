@@ -38,6 +38,9 @@ jobs:
           cache-dependency-path: |
             source/apps/desktop/go.sum
             source/services/core/go.sum
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+        with:
+          arch: x64
       - name: Restore validated SQLCipher prefix
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
@@ -89,6 +92,34 @@ jobs:
               Remove-Item -LiteralPath $trustedRunnerTemp -Recurse -Force
             }
           }
+      - name: Prepare private Windows native root
+        shell: pwsh
+        run: |
+          $nativeRoot = Join-Path $env:RUNNER_TEMP (
+            "contextid-windows-beta-{0}" -f $env:GITHUB_RUN_ID
+          )
+          if (Test-Path -LiteralPath $nativeRoot) {
+            throw "windows_local_beta_native_root_exists"
+          }
+          $null = New-Item -ItemType Directory -Path $nativeRoot -ErrorAction Stop
+          $current = [Security.Principal.WindowsIdentity]::GetCurrent().User
+          $system = [Security.Principal.SecurityIdentifier]::new("S-1-5-18")
+          $security = [Security.AccessControl.DirectorySecurity]::new()
+          $security.SetOwner($current)
+          $security.SetAccessRuleProtection($true, $false)
+          $inheritance = [Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
+            [Security.AccessControl.InheritanceFlags]::ObjectInherit
+          foreach ($sid in @($current, $system)) {
+            $rule = [Security.AccessControl.FileSystemAccessRule]::new(
+              $sid,
+              [Security.AccessControl.FileSystemRights]::FullControl,
+              $inheritance,
+              [Security.AccessControl.PropagationFlags]::None,
+              [Security.AccessControl.AccessControlType]::Allow
+            )
+            $security.AddAccessRule($rule)
+          }
+          Set-Acl -LiteralPath $nativeRoot -AclObject $security -ErrorAction Stop
       - name: Build and test Windows Local Beta
         working-directory: source
         shell: msys2 {0}
@@ -115,9 +146,7 @@ jobs:
           export TEMP="$windows_temp"
           unset TMPDIR
           native_root="$(cygpath -u "$RUNNER_TEMP")/contextid-windows-beta-$GITHUB_RUN_ID"
-          test ! -e "$native_root"
-          mkdir "$native_root"
-          chmod 700 "$native_root"
+          test -d "$native_root"
           gocache="$native_root/go-build-cache"
           mkdir "$gocache"
           chmod 700 "$gocache"
@@ -138,8 +167,10 @@ jobs:
           test -n "$prefix"
           vec_work="$native_root/sqlite-vec-work"
           vec_prefix="$native_root/sqlite-vec-prefix"
-          CPATH="$prefix/include${CPATH:+:$CPATH}" \
-            scripts/sqlite-vec/build-native-unix.sh --work-dir "$vec_work" --prefix "$vec_prefix"
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+            -File "$(cygpath -w scripts/sqlite-vec/build-native-windows.ps1)" \
+            -WorkDir "$(cygpath -w "$vec_work")" \
+            -Prefix "$(cygpath -w "$vec_prefix")"
           export PKG_CONFIG_PATH="$vec_prefix/lib/pkgconfig:$prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
           CONTEXTID_BROWSER_IDENTITIES_FILE="$policy" CONTEXTID_DESKTOP_NSIS=1 \
             make build-desktop SQLCIPHER_PREFIX="$prefix"
