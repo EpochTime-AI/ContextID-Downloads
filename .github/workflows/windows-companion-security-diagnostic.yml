@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: EpochTime-AI/ContextID
-          ref: fd905528affabf9416003138e14cc6afebb9eb3c
+          ref: 3588fd9b6ddb1e1bc7f7e5523b21a94eb350d1d3
           token: ${{ secrets.CONTEXTID_SOURCE_TOKEN }}
           persist-credentials: false
           path: source
