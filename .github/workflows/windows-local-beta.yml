@@ -305,9 +305,40 @@ jobs:
               throw "windows_local_beta_companion_payload_missing"
             }
           }
-          node scripts/release/native-installed-smoke.mjs --browser chrome `
-            --extension-id $beta.browsers.chrome.expected_id --scope system
-          if ($LASTEXITCODE -ne 0) { throw "windows_local_beta_companion_smoke_failed" }
+          $userRoot = Join-Path $env:APPDATA "ContextID\local"
+          $runtimeRoot = Join-Path $env:LOCALAPPDATA "ContextID\runtime"
+          $runtimeBytes = [Text.Encoding]::UTF8.GetBytes($runtimeRoot.ToLowerInvariant())
+          $runtimeDigest = [Security.Cryptography.SHA256]::HashData($runtimeBytes)
+          $endpointSuffix = -join $runtimeDigest[0..7].ForEach({ $_.ToString("x2") })
+          $endpoint = "\\.\pipe\contextid-$endpointSuffix"
+          $lifecycle = Join-Path $runtimeRoot "local-core.lifecycle.lock"
+          $maintenance = Join-Path $runtimeRoot "local-core.maintenance"
+          $coreError = Join-Path $env:RUNNER_TEMP "contextid-direct-core.stderr"
+          $env:CONTEXTID_STARTUP_DIAGNOSTICS = "1"
+          $directCore = Start-Process `
+            -FilePath (Join-Path $companionProgram "contextid-local-core.exe") `
+            -ArgumentList @(
+              "--root", $userRoot,
+              "--ipc", $endpoint,
+              "--lifecycle-lock", $lifecycle,
+              "--maintenance-marker", $maintenance
+            ) `
+            -RedirectStandardError $coreError -WindowStyle Hidden -PassThru
+          $directExited = $directCore.WaitForExit(35000)
+          Write-Host "WINDOWS_COMPANION_DIRECT_EXITED:$directExited"
+          if (-not $directExited) {
+            Stop-Process -Id $directCore.Id -Force -ErrorAction Stop
+            $directCore.WaitForExit()
+          } else {
+            Write-Host "WINDOWS_COMPANION_DIRECT_EXIT_CODE:$($directCore.ExitCode)"
+          }
+          if (Test-Path -LiteralPath $coreError -PathType Leaf) {
+            Get-Content -LiteralPath $coreError -ErrorAction Continue |
+              ForEach-Object { Write-Host "WINDOWS_COMPANION_DIRECT_ERROR:$($_)" }
+            Remove-Item -LiteralPath $coreError -Force -ErrorAction Stop
+          }
+          Remove-Item -LiteralPath Env:CONTEXTID_STARTUP_DIAGNOSTICS -ErrorAction Stop
+          throw "windows_local_beta_companion_startup_diagnostic"
           Invoke-ExternalUninstaller `
             -Path (Join-Path $companionProgram "Uninstall.exe") `
             -Phase "companion_uninstall" `
