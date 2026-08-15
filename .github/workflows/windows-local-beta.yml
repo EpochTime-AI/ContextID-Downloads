@@ -299,7 +299,31 @@ jobs:
           }
           node scripts/release/native-installed-smoke.mjs --browser chrome `
             --extension-id $beta.browsers.chrome.expected_id --scope system
-          if ($LASTEXITCODE -ne 0) { throw "windows_local_beta_companion_smoke_failed" }
+          $firstCompanionSmoke = $LASTEXITCODE
+          Write-Host "WINDOWS_COMPANION_SMOKE_FIRST:$firstCompanionSmoke"
+          if ($firstCompanionSmoke -ne 0) {
+            Get-Process -Name "contextid-local-core" -ErrorAction SilentlyContinue |
+              ForEach-Object {
+                Write-Host "WINDOWS_COMPANION_CORE_PROCESS:$($_.Id):$($_.StartTime.ToUniversalTime().ToString('O'))"
+              }
+            $userRoot = Join-Path $env:APPDATA "ContextID"
+            Write-Host "WINDOWS_COMPANION_USER_ROOT:$((Test-Path -LiteralPath $userRoot))"
+            if (Test-Path -LiteralPath $userRoot -PathType Container) {
+              Get-ChildItem -LiteralPath $userRoot -Force -Recurse -ErrorAction Continue |
+                ForEach-Object {
+                  Write-Host "WINDOWS_COMPANION_USER_ITEM:$($_.FullName.Substring($userRoot.Length))"
+                }
+            }
+            Start-Sleep -Seconds 15
+            node scripts/release/native-installed-smoke.mjs --browser chrome `
+              --extension-id $beta.browsers.chrome.expected_id --scope system
+            $secondCompanionSmoke = $LASTEXITCODE
+            Write-Host "WINDOWS_COMPANION_SMOKE_SECOND:$secondCompanionSmoke"
+            if ($secondCompanionSmoke -eq 0) {
+              throw "windows_local_beta_companion_cold_start_timeout"
+            }
+            throw "windows_local_beta_companion_smoke_persistent"
+          }
           Invoke-ExternalUninstaller `
             -Path (Join-Path $companionProgram "Uninstall.exe") `
             -Phase "companion_uninstall" `
