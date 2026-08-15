@@ -46,7 +46,16 @@ jobs:
           }
           $process = Start-Process -FilePath $output -ArgumentList "/S" -Wait -PassThru
           Write-Host "WINDOWS_COMPANION_DIAGNOSTIC_EXIT:$($process.ExitCode)"
-          Write-Host "WINDOWS_COMPANION_DIAGNOSTIC_BASE:$((Test-Path -LiteralPath (Join-Path $env:ProgramW6432 'ContextID')))"
+          $base = Join-Path $env:ProgramW6432 "ContextID"
+          Write-Host "WINDOWS_COMPANION_DIAGNOSTIC_BASE:$((Test-Path -LiteralPath $base))"
+          if (Test-Path -LiteralPath $base -PathType Container) {
+            & "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" `
+              -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+              -File (Join-Path $source "scripts\build\companion-path-trust.ps1") `
+              -Mode ProtectSystemParent -Path $base
+            Write-Host "WINDOWS_COMPANION_DIAGNOSTIC_PARENT_TRUST_EXIT:$LASTEXITCODE"
+            & "$env:WINDIR\System32\icacls.exe" $base
+          }
           Get-ChildItem -LiteralPath $env:ProgramW6432 -Force -Directory `
             -Filter ".ContextIDCompanionTools-*" -ErrorAction Continue |
             ForEach-Object { Write-Host "WINDOWS_COMPANION_DIAGNOSTIC_TOOLS:$($_.FullName)" }
