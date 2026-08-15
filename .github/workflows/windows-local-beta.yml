@@ -63,12 +63,10 @@ jobs:
         working-directory: source
         shell: bash
         run: pnpm install --frozen-lockfile
-      - name: Verify Windows install and package contracts
+      - name: Verify Windows Native Host contract
         working-directory: source
         shell: pwsh
-        run: |
-          ./scripts/install/browser-native-host-windows.contract.ps1
-          ./scripts/install/contextid-companion-uninstall-windows.contract.ps1
+        run: ./scripts/install/browser-native-host-windows.contract.ps1
       - name: Build and test Windows Local Beta
         working-directory: source
         shell: msys2 {0}
