@@ -173,9 +173,12 @@ jobs:
             -Prefix "$(cygpath -w "$vec_prefix")" \
             -SqliteIncludeDir "$(cygpath -w "$prefix/include")"
           export PKG_CONFIG_PATH="$vec_prefix/lib/pkgconfig:$prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-          GOWORK=off go test -mod=readonly -tags=contextid_sqlcipher \
-            ./services/core/cmd/contextid-local-core \
-            -run '^TestWindowsSystemKeyProviderCreatesFirstSpace$' -count=1
+          (
+            cd services/core
+            GOWORK=off go test -mod=readonly -tags=contextid_sqlcipher \
+              ./cmd/contextid-local-core \
+              -run '^TestWindowsSystemKeyProviderCreatesFirstSpace$' -count=1
+          )
           CONTEXTID_DESKTOP_SIDECAR_TMP_ROOT="$native_root" \
             CONTEXTID_SQLITE_VEC_PREFIX="$vec_prefix" CONTEXTID_BROWSER_IDENTITIES_FILE="$policy" \
             CONTEXTID_DESKTOP_NSIS=1 \
