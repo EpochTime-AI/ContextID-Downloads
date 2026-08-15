@@ -56,6 +56,7 @@ jobs:
           install: >-
             make git autoconf automake libtool python curl
             mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-nodejs
             mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-openssl
             mingw-w64-ucrt-x86_64-ripgrep
