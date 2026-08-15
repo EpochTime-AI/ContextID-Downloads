@@ -52,11 +52,11 @@ jobs:
       - uses: msys2/setup-msys2@40677d36a502eb2cf0fb808cc9dec31bf6152638
         with:
           msystem: UCRT64
+          path-type: inherit
           update: true
           install: >-
             make git autoconf automake libtool python curl
             mingw-w64-ucrt-x86_64-toolchain
-            mingw-w64-ucrt-x86_64-nodejs
             mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-openssl
             mingw-w64-ucrt-x86_64-ripgrep
@@ -73,6 +73,9 @@ jobs:
         shell: msys2 {0}
         run: |
           set -eu
+          test "$(node -p 'process.versions.node.split(`.`)[0]')" = 22
+          go env GOVERSION | grep -Eq '^go1\.24(\.|$)'
+          pnpm --version
           actual_sha=$(git rev-parse HEAD)
           test "$actual_sha" = 04acd92c8e9cfc71e98cfc31fa2fb51a948199df
           registry=$(node --input-type=module <<'NODE'
