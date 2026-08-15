@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: EpochTime-AI/ContextID
-          ref: 6b6e0b994bee5285af9998c21348c9bed130c95a
+          ref: db3b4bf4c95aaa5b728ff9ed46ce4815df891778
           token: ${{ secrets.CONTEXTID_SOURCE_TOKEN }}
           persist-credentials: false
           path: source
@@ -82,17 +82,7 @@ jobs:
           $previousRunnerTemp = $env:RUNNER_TEMP
           try {
             $env:RUNNER_TEMP = $trustedRunnerTemp
-            $windowsPowerShell = Join-Path $env:SystemRoot `
-              'System32\WindowsPowerShell\v1.0\powershell.exe'
-            $contractPath = [IO.Path]::GetFullPath(
-              './scripts/release/platform-signing-windows.contract.ps1'
-            )
-            & $windowsPowerShell -NoLogo -NoProfile -NonInteractive `
-              -ExecutionPolicy Bypass `
-              -File $contractPath
-            if ($LASTEXITCODE -ne 0) {
-              throw 'release_windows_signing_contract_failed'
-            }
+            ./scripts/release/platform-signing-windows.contract.ps1
           } finally {
             $env:RUNNER_TEMP = $previousRunnerTemp
             if (Test-Path -LiteralPath $trustedRunnerTemp -PathType Container) {
@@ -108,7 +98,7 @@ jobs:
           go env GOVERSION | grep -Eq '^go1\.24(\.|$)'
           pnpm --version
           actual_sha=$(git rev-parse HEAD)
-          test "$actual_sha" = 6b6e0b994bee5285af9998c21348c9bed130c95a
+          test "$actual_sha" = db3b4bf4c95aaa5b728ff9ed46ce4815df891778
           registry=$(node --input-type=module <<'NODE'
           import {
             loadLocalBetaIdentityRegistry,
@@ -287,7 +277,7 @@ jobs:
             schema_version = 1
             product = "ContextID"
             version = $version
-            git_sha = "6b6e0b994bee5285af9998c21348c9bed130c95a"
+            git_sha = "db3b4bf4c95aaa5b728ff9ed46ce4815df891778"
             channel = "local_beta"
             distribution = "public_prerelease"
             target = "windows/amd64"
@@ -327,7 +317,7 @@ jobs:
       - name: Upload Windows Local Beta
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: contextid-windows-local-beta-6b6e0b99
+          name: contextid-windows-local-beta-db3b4bf4
           path: ${{ runner.temp }}/contextid-windows-local-beta/
           if-no-files-found: error
           retention-days: 14
