@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: EpochTime-AI/ContextID
-          ref: e9bfe8bfb35c2543937103285a4bbe1e06780ba2
+          ref: 090213de0512e5ff57648b62d4a87b3ff1df7c53
           token: ${{ secrets.CONTEXTID_SOURCE_TOKEN }}
           persist-credentials: false
           path: source
@@ -129,7 +129,7 @@ jobs:
           go env GOVERSION | grep -Eq '^go1\.24(\.|$)'
           pnpm --version
           actual_sha=$(git rev-parse HEAD)
-          test "$actual_sha" = e9bfe8bfb35c2543937103285a4bbe1e06780ba2
+          test "$actual_sha" = 090213de0512e5ff57648b62d4a87b3ff1df7c53
           registry=$(node --input-type=module <<'NODE'
           import {
             loadLocalBetaIdentityRegistry,
@@ -177,6 +177,8 @@ jobs:
             cd services/core
             GOWORK=off go test -mod=readonly ./internal/securefile \
               -run '^TestWindowsReadSystemAllowsConcurrentAuthorizedReader$' -count=1
+            GOWORK=off go test -mod=readonly ./internal/local/persistence/sqlite \
+              -run '^TestWindowsPrivateDatabaseFileCreationDoesNotInheritLocalSystem$' -count=1
             GOWORK=off go test -mod=readonly -tags=contextid_sqlcipher \
               ./cmd/contextid-local-core \
               -run '^TestWindowsSystemKeyProviderCreatesFirstSpace$' -count=1
@@ -305,40 +307,9 @@ jobs:
               throw "windows_local_beta_companion_payload_missing"
             }
           }
-          $userRoot = Join-Path $env:APPDATA "ContextID\local"
-          $runtimeRoot = Join-Path $env:LOCALAPPDATA "ContextID\runtime"
-          $runtimeBytes = [Text.Encoding]::UTF8.GetBytes($runtimeRoot.ToLowerInvariant())
-          $runtimeDigest = [Security.Cryptography.SHA256]::HashData($runtimeBytes)
-          $endpointSuffix = -join $runtimeDigest[0..7].ForEach({ $_.ToString("x2") })
-          $endpoint = "\\.\pipe\contextid-$endpointSuffix"
-          $lifecycle = Join-Path $runtimeRoot "local-core.lifecycle.lock"
-          $maintenance = Join-Path $runtimeRoot "local-core.maintenance"
-          $coreError = Join-Path $env:RUNNER_TEMP "contextid-direct-core.stderr"
-          $env:CONTEXTID_STARTUP_DIAGNOSTICS = "1"
-          $directCore = Start-Process `
-            -FilePath (Join-Path $companionProgram "contextid-local-core.exe") `
-            -ArgumentList @(
-              "--root", $userRoot,
-              "--ipc", $endpoint,
-              "--lifecycle-lock", $lifecycle,
-              "--maintenance-marker", $maintenance
-            ) `
-            -RedirectStandardError $coreError -WindowStyle Hidden -PassThru
-          $directExited = $directCore.WaitForExit(35000)
-          Write-Host "WINDOWS_COMPANION_DIRECT_EXITED:$directExited"
-          if (-not $directExited) {
-            Stop-Process -Id $directCore.Id -Force -ErrorAction Stop
-            $directCore.WaitForExit()
-          } else {
-            Write-Host "WINDOWS_COMPANION_DIRECT_EXIT_CODE:$($directCore.ExitCode)"
-          }
-          if (Test-Path -LiteralPath $coreError -PathType Leaf) {
-            Get-Content -LiteralPath $coreError -ErrorAction Continue |
-              ForEach-Object { Write-Host "WINDOWS_COMPANION_DIRECT_ERROR:$($_)" }
-            Remove-Item -LiteralPath $coreError -Force -ErrorAction Stop
-          }
-          Remove-Item -LiteralPath Env:CONTEXTID_STARTUP_DIAGNOSTICS -ErrorAction Stop
-          throw "windows_local_beta_companion_startup_diagnostic"
+          node scripts/release/native-installed-smoke.mjs --browser chrome `
+            --extension-id $beta.browsers.chrome.expected_id --scope system
+          if ($LASTEXITCODE -ne 0) { throw "windows_local_beta_companion_smoke_failed" }
           Invoke-ExternalUninstaller `
             -Path (Join-Path $companionProgram "Uninstall.exe") `
             -Phase "companion_uninstall" `
@@ -395,7 +366,7 @@ jobs:
             schema_version = 1
             product = "ContextID"
             version = $version
-            git_sha = "e9bfe8bfb35c2543937103285a4bbe1e06780ba2"
+            git_sha = "090213de0512e5ff57648b62d4a87b3ff1df7c53"
             channel = "local_beta"
             distribution = "public_prerelease"
             target = "windows/amd64"
