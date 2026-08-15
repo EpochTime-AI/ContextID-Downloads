@@ -55,6 +55,30 @@ jobs:
               -Mode ProtectSystemParent -Path $base
             Write-Host "WINDOWS_COMPANION_DIAGNOSTIC_PARENT_TRUST_EXIT:$LASTEXITCODE"
             & "$env:WINDIR\System32\icacls.exe" $base
+            $writeRights = [Security.AccessControl.FileSystemRights]::WriteData -bor
+              [Security.AccessControl.FileSystemRights]::AppendData -bor
+              [Security.AccessControl.FileSystemRights]::WriteAttributes -bor
+              [Security.AccessControl.FileSystemRights]::WriteExtendedAttributes -bor
+              [Security.AccessControl.FileSystemRights]::Delete -bor
+              [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
+              [Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+              [Security.AccessControl.FileSystemRights]::TakeOwnership
+            $ancestorRights = [Security.AccessControl.FileSystemRights]::Delete -bor
+              [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
+              [Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+              [Security.AccessControl.FileSystemRights]::TakeOwnership
+            foreach ($target in @($base, $env:ProgramW6432)) {
+              $acl = Get-Acl -LiteralPath $target
+              foreach ($rule in $acl.Access) {
+                $sid = $rule.IdentityReference.Translate(
+                  [Security.Principal.SecurityIdentifier]
+                ).Value
+                $raw = [int64]$rule.FileSystemRights
+                $write = [int64]($rule.FileSystemRights -band $writeRights)
+                $ancestor = [int64]($rule.FileSystemRights -band $ancestorRights)
+                Write-Host "WINDOWS_COMPANION_DIAGNOSTIC_ACE:$target|$sid|$raw|$write|$ancestor|$($rule.InheritanceFlags)|$($rule.PropagationFlags)|$($rule.IsInherited)"
+              }
+            }
           }
           Get-ChildItem -LiteralPath $env:ProgramW6432 -Force -Directory `
             -Filter ".ContextIDCompanionTools-*" -ErrorAction Continue |
