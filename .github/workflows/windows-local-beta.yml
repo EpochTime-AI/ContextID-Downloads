@@ -223,11 +223,48 @@ jobs:
             }
           }
 
-          function Invoke-Nsis([string]$Path, [string[]]$Arguments = @("/S")) {
-            $process = Start-Process -FilePath $Path -ArgumentList $Arguments -Wait -PassThru
-            if ($process.ExitCode -ne 0) { throw "windows_local_beta_nsis_failed" }
+          function Write-InstallerState([string]$Phase) {
+            Write-Host "WINDOWS_INSTALLER_STATE_BEGIN:$($Phase)"
+            foreach ($root in @(
+                (Join-Path $env:ProgramW6432 "ContextID"),
+                (Join-Path $env:ProgramW6432 "EpochTime AI\ContextID")
+              )) {
+              Write-Host "STATE_ROOT:$($root):$(Test-Path -LiteralPath $root)"
+              if (Test-Path -LiteralPath $root) {
+                Get-ChildItem -LiteralPath $root -Force -Recurse -ErrorAction Continue |
+                  ForEach-Object { Write-Host "STATE_ITEM:$($_.FullName)" }
+              }
+            }
+            Get-ChildItem -LiteralPath $env:ProgramW6432 -Force -Directory `
+              -Filter ".ContextIDCompanionTools-*" -ErrorAction Continue |
+              ForEach-Object { Write-Host "STATE_TOOLS:$($_.FullName)" }
+            foreach ($key in @(
+                "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\ContextIDCompanion",
+                "HKLM:\Software\Google\Chrome\NativeMessagingHosts\com.contextid.browser",
+                "HKLM:\Software\Microsoft\Edge\NativeMessagingHosts\com.contextid.browser"
+              )) {
+              Write-Host "STATE_REGISTRY:$($key):$(Test-Path -LiteralPath $key)"
+            }
+            Write-Host "WINDOWS_INSTALLER_STATE_END:$($Phase)"
           }
-          function Invoke-ExternalUninstaller([string]$Path, [string]$ProgramDirectory) {
+
+          function Invoke-Nsis(
+            [string]$Path,
+            [string]$Phase,
+            [string[]]$Arguments = @("/S")
+          ) {
+            $process = Start-Process -FilePath $Path -ArgumentList $Arguments -Wait -PassThru
+            Write-Host "WINDOWS_NSIS_RESULT:$($Phase):$($process.ExitCode)"
+            if ($process.ExitCode -ne 0) {
+              Write-InstallerState -Phase $Phase
+              throw "windows_local_beta_nsis_failed:$($Phase):$($process.ExitCode)"
+            }
+          }
+          function Invoke-ExternalUninstaller(
+            [string]$Path,
+            [string]$Phase,
+            [string]$ProgramDirectory
+          ) {
             $temporaryDirectory = Join-Path $env:RUNNER_TEMP (
               "contextid-windows-beta-uninstall-{0}" -f [Guid]::NewGuid().ToString("N")
             )
@@ -235,7 +272,8 @@ jobs:
             $copy = Join-Path $temporaryDirectory "Uninstall.exe"
             try {
               Copy-Item -LiteralPath $Path -Destination $copy -ErrorAction Stop
-              Invoke-Nsis -Path $copy -Arguments @("/S", "_?=$ProgramDirectory")
+              Invoke-Nsis -Path $copy -Phase $Phase `
+                -Arguments @("/S", "_?=$ProgramDirectory")
             } finally {
               if (Test-Path -LiteralPath $copy) { Remove-Item -LiteralPath $copy -Force }
               if (Test-Path -LiteralPath $temporaryDirectory) {
@@ -247,7 +285,7 @@ jobs:
           $beta = Get-Content -LiteralPath "release/local-beta-browser-identities.json" -Raw |
             ConvertFrom-Json
           $companionProgram = Join-Path $env:ProgramW6432 "ContextID\Companion"
-          Invoke-Nsis -Path $companionSource
+          Invoke-Nsis -Path $companionSource -Phase "companion_install"
           foreach ($name in @(
               "contextid-local-core.exe",
               "contextid-browser-host.exe",
@@ -264,13 +302,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "windows_local_beta_companion_smoke_failed" }
           Invoke-ExternalUninstaller `
             -Path (Join-Path $companionProgram "Uninstall.exe") `
+            -Phase "companion_uninstall" `
             -ProgramDirectory $companionProgram
           if (Test-Path -LiteralPath $companionProgram) {
             throw "windows_local_beta_companion_uninstall_residue"
           }
 
           $desktopProgram = Join-Path $env:ProgramW6432 "EpochTime AI\ContextID"
-          Invoke-Nsis -Path $desktopSource
+          Invoke-Nsis -Path $desktopSource -Phase "desktop_install"
           foreach ($name in @(
               "contextid-desktop.exe",
               "contextid-local-core.exe",
@@ -287,6 +326,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "windows_local_beta_desktop_smoke_failed" }
           Invoke-ExternalUninstaller `
             -Path (Join-Path $desktopProgram "uninstall.exe") `
+            -Phase "desktop_uninstall" `
             -ProgramDirectory $desktopProgram
           if (Test-Path -LiteralPath $desktopProgram) {
             throw "windows_local_beta_desktop_uninstall_residue"
