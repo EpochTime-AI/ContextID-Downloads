@@ -310,6 +310,39 @@ jobs:
           node scripts/release/native-installed-smoke.mjs --browser chrome `
             --extension-id $beta.browsers.chrome.expected_id --scope system
           if ($LASTEXITCODE -ne 0) { throw "windows_local_beta_companion_smoke_failed" }
+
+          # Run the same installed-payload verifier while maintenance is held,
+          # but surface only its fixed, non-sensitive error code. The NSIS
+          # transaction remains the authority and is still exercised below.
+          $companionCore = Join-Path $companionProgram "contextid-local-core.exe"
+          $maintenance = Start-Process -FilePath $companionCore `
+            -ArgumentList @("maintenance", "begin") -Wait -PassThru
+          if ($maintenance.ExitCode -ne 0) {
+            throw "windows_local_beta_companion_diagnostic_maintenance_failed"
+          }
+          try {
+            $diagnosticScript = Join-Path $companionProgram `
+              "native-host\contextid-companion-uninstall.ps1"
+            $pathTrustScript = Join-Path $env:GITHUB_WORKSPACE `
+              "source\scripts\build\companion-path-trust.ps1"
+            $diagnosticOutput = @(& powershell.exe -NoLogo -NoProfile -NonInteractive `
+              -ExecutionPolicy Bypass -File $diagnosticScript -Scope Machine `
+              -PathTrustScript $pathTrustScript -VerifyProgramOnly 2>&1)
+            $diagnosticExit = $LASTEXITCODE
+            if ($diagnosticExit -ne 0) {
+              $stableCode = @($diagnosticOutput | ForEach-Object { "$_" } |
+                Where-Object { $_ -cmatch '^companion_[a-z0-9_]+$' } |
+                Select-Object -Last 1)
+              if ($stableCode.Count -ne 1) { $stableCode = @("companion_unknown") }
+              throw "windows_local_beta_companion_preflight:$($stableCode[0])"
+            }
+          } finally {
+            $maintenance = Start-Process -FilePath $companionCore `
+              -ArgumentList @("maintenance", "end") -Wait -PassThru
+            if ($maintenance.ExitCode -ne 0) {
+              throw "windows_local_beta_companion_diagnostic_resume_failed"
+            }
+          }
           Invoke-ExternalUninstaller `
             -Path (Join-Path $companionProgram "Uninstall.exe") `
             -Phase "companion_uninstall" `
