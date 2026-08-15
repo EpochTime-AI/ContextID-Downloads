@@ -110,6 +110,10 @@ jobs:
           NODE
           )
           export CONTEXTID_BROWSER_IDENTITIES_JSON="$registry"
+          windows_temp="$(cygpath -w "$RUNNER_TEMP")"
+          export TMP="$windows_temp"
+          export TEMP="$windows_temp"
+          unset TMPDIR
           native_root="$(cygpath -u "$RUNNER_TEMP")/contextid-windows-beta-$GITHUB_RUN_ID"
           test ! -e "$native_root"
           mkdir "$native_root"
