@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: EpochTime-AI/ContextID
-          ref: dd0a3dad70e36da781c18d91444242c897c32c19
+          ref: 35fbf9c6ad299928ded499238816cac6b1acd9a0
           token: ${{ secrets.CONTEXTID_SOURCE_TOKEN }}
           persist-credentials: false
           path: source
@@ -129,7 +129,7 @@ jobs:
           go env GOVERSION | grep -Eq '^go1\.24(\.|$)'
           pnpm --version
           actual_sha=$(git rev-parse HEAD)
-          test "$actual_sha" = dd0a3dad70e36da781c18d91444242c897c32c19
+          test "$actual_sha" = 35fbf9c6ad299928ded499238816cac6b1acd9a0
           registry=$(node --input-type=module <<'NODE'
           import {
             loadLocalBetaIdentityRegistry,
@@ -174,7 +174,8 @@ jobs:
             -SqliteIncludeDir "$(cygpath -w "$prefix/include")"
           export PKG_CONFIG_PATH="$vec_prefix/lib/pkgconfig:$prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
           CONTEXTID_DESKTOP_SIDECAR_TMP_ROOT="$native_root" \
-            CONTEXTID_BROWSER_IDENTITIES_FILE="$policy" CONTEXTID_DESKTOP_NSIS=1 \
+            CONTEXTID_SQLITE_VEC_PREFIX="$vec_prefix" CONTEXTID_BROWSER_IDENTITIES_FILE="$policy" \
+            CONTEXTID_DESKTOP_NSIS=1 \
             make build-desktop SQLCIPHER_PREFIX="$prefix"
           make verify-desktop-e2e SQLCIPHER_PREFIX="$prefix"
 
@@ -192,7 +193,8 @@ jobs:
           companion_payload="$companion_root/payload"
           companion_output="$companion_root/output"
           mkdir "$companion_payload" "$companion_output"
-          CONTEXTID_SQLCIPHER_PREFIX="$prefix" CONTEXTID_BROWSER_IDENTITIES_FILE="$policy" \
+          CONTEXTID_SQLCIPHER_PREFIX="$prefix" CONTEXTID_SQLITE_VEC_PREFIX="$vec_prefix" \
+            CONTEXTID_BROWSER_IDENTITIES_FILE="$policy" \
             scripts/build/companion-payload.sh windows/amd64 "$companion_payload"
           scripts/build/companion-package.sh windows/amd64 "$companion_output" \
             --payload "$companion_payload"
@@ -314,7 +316,7 @@ jobs:
             schema_version = 1
             product = "ContextID"
             version = $version
-            git_sha = "dd0a3dad70e36da781c18d91444242c897c32c19"
+            git_sha = "35fbf9c6ad299928ded499238816cac6b1acd9a0"
             channel = "local_beta"
             distribution = "public_prerelease"
             target = "windows/amd64"
@@ -354,7 +356,7 @@ jobs:
       - name: Upload Windows Local Beta
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: contextid-windows-local-beta-dd0a3dad
+          name: contextid-windows-local-beta-35fbf9c6
           path: ${{ runner.temp }}/contextid-windows-local-beta/
           if-no-files-found: error
           retention-days: 14
