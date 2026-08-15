@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: EpochTime-AI/ContextID
-          ref: abbe1050a5499e5337a8e4eb31b6590a5e8dceaa
+          ref: e9bfe8bfb35c2543937103285a4bbe1e06780ba2
           token: ${{ secrets.CONTEXTID_SOURCE_TOKEN }}
           persist-credentials: false
           path: source
@@ -129,7 +129,7 @@ jobs:
           go env GOVERSION | grep -Eq '^go1\.24(\.|$)'
           pnpm --version
           actual_sha=$(git rev-parse HEAD)
-          test "$actual_sha" = abbe1050a5499e5337a8e4eb31b6590a5e8dceaa
+          test "$actual_sha" = e9bfe8bfb35c2543937103285a4bbe1e06780ba2
           registry=$(node --input-type=module <<'NODE'
           import {
             loadLocalBetaIdentityRegistry,
@@ -395,7 +395,7 @@ jobs:
             schema_version = 1
             product = "ContextID"
             version = $version
-            git_sha = "abbe1050a5499e5337a8e4eb31b6590a5e8dceaa"
+            git_sha = "e9bfe8bfb35c2543937103285a4bbe1e06780ba2"
             channel = "local_beta"
             distribution = "public_prerelease"
             target = "windows/amd64"
