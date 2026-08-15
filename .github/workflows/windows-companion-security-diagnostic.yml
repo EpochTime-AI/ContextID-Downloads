@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: EpochTime-AI/ContextID
-          ref: f761db04c26f77acffea758e8a583774c87d02ae
+          ref: 8c0e32bc21a3290fac9dbb642243ab264167b2ce
           token: ${{ secrets.CONTEXTID_SOURCE_TOKEN }}
           persist-credentials: false
           path: source
@@ -49,6 +49,52 @@ jobs:
                 -File (Join-Path $source "scripts\build\companion-path-trust.ps1") `
                 -Mode Source -Path $payload
               Write-Host "WINDOWS_PATH_TRUST_DIAGNOSTIC_HOST:$hostPath|$LASTEXITCODE"
+            }
+          } finally {
+            if (Test-Path -LiteralPath $root) {
+              Remove-Item -LiteralPath $root -Recurse -Force
+            }
+          }
+      - name: Diagnose Native Messaging registration on Windows PowerShell
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $source = Join-Path $env:GITHUB_WORKSPACE "source"
+          . (Join-Path $source "scripts\release\windows-path-security.ps1")
+          $root = Join-Path $env:LOCALAPPDATA (
+            "ContextIDNativeHostDiagnostic-{0}" -f [Guid]::NewGuid().ToString("N")
+          )
+          $root = New-ReleaseWindowsPrivateDirectory -LiteralPath $root `
+            -FailureCode "windows_native_host_diagnostic_setup_failed"
+          try {
+            $hostPath = Join-Path $root "contextid-browser-host.exe"
+            $policyPath = Join-Path $root "browser-identities.json"
+            $testRoot = Join-Path $root "installed"
+            Copy-Item -LiteralPath "$env:WINDIR\System32\where.exe" -Destination $hostPath
+            Copy-Item -LiteralPath (Join-Path $source "release\local-beta-browser-identities.json") `
+              -Destination $policyPath
+            $powershell = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
+            $previousTesting = $env:CONTEXTID_NATIVE_HOST_TESTING
+            $env:CONTEXTID_NATIVE_HOST_TESTING = "1"
+            try {
+              & $powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+                -File (Join-Path $source "scripts\install\browser-native-host.ps1") `
+                -Scope Machine -HostPath $hostPath -PolicyPath $policyPath -TestRoot $testRoot
+              Write-Host "WINDOWS_NATIVE_HOST_DIAGNOSTIC_INSTALL:$LASTEXITCODE"
+              if ($LASTEXITCODE -ne 0) { throw "windows_native_host_diagnostic_install_failed" }
+              & $powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+                -File (Join-Path $source "scripts\install\browser-native-host.ps1") `
+                -Scope Machine -VerifyOnly -HostPath $hostPath -PolicyPath $policyPath `
+                -TestRoot $testRoot
+              Write-Host "WINDOWS_NATIVE_HOST_DIAGNOSTIC_VERIFY:$LASTEXITCODE"
+              if ($LASTEXITCODE -ne 0) { throw "windows_native_host_diagnostic_verify_failed" }
+              & $powershell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+                -File (Join-Path $source "scripts\install\browser-native-host-uninstall.ps1") `
+                -Scope Machine -TestRoot $testRoot
+              Write-Host "WINDOWS_NATIVE_HOST_DIAGNOSTIC_UNINSTALL:$LASTEXITCODE"
+              if ($LASTEXITCODE -ne 0) { throw "windows_native_host_diagnostic_uninstall_failed" }
+            } finally {
+              $env:CONTEXTID_NATIVE_HOST_TESTING = $previousTesting
             }
           } finally {
             if (Test-Path -LiteralPath $root) {
