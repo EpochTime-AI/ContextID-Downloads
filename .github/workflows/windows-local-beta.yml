@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: EpochTime-AI/ContextID
-          ref: 333d13b7d4b64c3f1c57aa58fa62f4213f17d72b
+          ref: 6c22ae65b839ec50acfb10b8e99328ff4d69827f
           token: ${{ secrets.CONTEXTID_SOURCE_TOKEN }}
           persist-credentials: false
           path: source
@@ -129,7 +129,7 @@ jobs:
           go env GOVERSION | grep -Eq '^go1\.24(\.|$)'
           pnpm --version
           actual_sha=$(git rev-parse HEAD)
-          test "$actual_sha" = 333d13b7d4b64c3f1c57aa58fa62f4213f17d72b
+          test "$actual_sha" = 6c22ae65b839ec50acfb10b8e99328ff4d69827f
           registry=$(node --input-type=module <<'NODE'
           import {
             loadLocalBetaIdentityRegistry,
@@ -173,7 +173,8 @@ jobs:
             -Prefix "$(cygpath -w "$vec_prefix")" \
             -SqliteIncludeDir "$(cygpath -w "$prefix/include")"
           export PKG_CONFIG_PATH="$vec_prefix/lib/pkgconfig:$prefix/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-          CONTEXTID_BROWSER_IDENTITIES_FILE="$policy" CONTEXTID_DESKTOP_NSIS=1 \
+          CONTEXTID_DESKTOP_SIDECAR_TMP_ROOT="$native_root" \
+            CONTEXTID_BROWSER_IDENTITIES_FILE="$policy" CONTEXTID_DESKTOP_NSIS=1 \
             make build-desktop SQLCIPHER_PREFIX="$prefix"
           make verify-desktop-e2e SQLCIPHER_PREFIX="$prefix"
 
@@ -313,7 +314,7 @@ jobs:
             schema_version = 1
             product = "ContextID"
             version = $version
-            git_sha = "333d13b7d4b64c3f1c57aa58fa62f4213f17d72b"
+            git_sha = "6c22ae65b839ec50acfb10b8e99328ff4d69827f"
             channel = "local_beta"
             distribution = "public_prerelease"
             target = "windows/amd64"
@@ -353,7 +354,7 @@ jobs:
       - name: Upload Windows Local Beta
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: contextid-windows-local-beta-333d13b7
+          name: contextid-windows-local-beta-6c22ae65
           path: ${{ runner.temp }}/contextid-windows-local-beta/
           if-no-files-found: error
           retention-days: 14
