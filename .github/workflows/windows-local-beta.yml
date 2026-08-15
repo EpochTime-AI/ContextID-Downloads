@@ -20,7 +20,7 @@ jobs:
         with:
           repository: EpochTime-AI/ContextID
           ref: 04acd92c8e9cfc71e98cfc31fa2fb51a948199df
-          ssh-key: ${{ secrets.CONTEXTID_SOURCE_DEPLOY_KEY }}
+          token: ${{ secrets.CONTEXTID_SOURCE_TOKEN }}
           persist-credentials: false
           path: source
       - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda
