@@ -354,7 +354,7 @@ jobs:
           $desktopProgram = Join-Path $env:ProgramW6432 "EpochTime AI\ContextID"
           Invoke-Nsis -Path $desktopSource -Phase "desktop_install"
           foreach ($name in @(
-              "contextid-desktop.exe",
+              "ContextID.exe",
               "contextid-local-core.exe",
               "contextid-browser-host.exe",
               "native-host\browser-identities.json",
