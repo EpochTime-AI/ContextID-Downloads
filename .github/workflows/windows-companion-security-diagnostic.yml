@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: EpochTime-AI/ContextID
-          ref: 810c6dbd248e2ed901bc94ef87b67a6467c0501b
+          ref: fd905528affabf9416003138e14cc6afebb9eb3c
           token: ${{ secrets.CONTEXTID_SOURCE_TOKEN }}
           persist-credentials: false
           path: source
@@ -50,7 +50,7 @@ jobs:
           Get-ChildItem -LiteralPath $env:ProgramW6432 -Force -Directory `
             -Filter ".ContextIDCompanionTools-*" -ErrorAction Continue |
             ForEach-Object { Write-Host "WINDOWS_COMPANION_DIAGNOSTIC_TOOLS:$($_.FullName)" }
-          if ($process.ExitCode -ge 100 -and $process.ExitCode -le 120) {
+          if ($process.ExitCode -ge 100 -and $process.ExitCode -le 126) {
             throw "windows_companion_trusted_tools_phase_$($process.ExitCode)"
           }
           Write-Host "WINDOWS_COMPANION_TRUSTED_TOOLS_PASSED"
