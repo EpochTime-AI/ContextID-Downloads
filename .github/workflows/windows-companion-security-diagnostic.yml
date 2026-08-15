@@ -71,8 +71,31 @@ jobs:
             $policyPath = Join-Path $root "browser-identities.json"
             $testRoot = Join-Path $root "installed"
             Copy-Item -LiteralPath "$env:WINDIR\System32\where.exe" -Destination $hostPath
-            Copy-Item -LiteralPath (Join-Path $source "release\local-beta-browser-identities.json") `
-              -Destination $policyPath
+            $beta = Get-Content -LiteralPath (
+              Join-Path $source "release\local-beta-browser-identities.json"
+            ) -Raw | ConvertFrom-Json
+            $canonical = '{"schema_version":1,"bindings":[' +
+              '{"browser_family":"chrome","extension_id":"' +
+              $beta.browsers.chrome.expected_id + '"},' +
+              '{"browser_family":"edge","extension_id":"' +
+              $beta.browsers.edge.expected_id + '"},' +
+              '{"browser_family":"firefox","extension_id":"extension@contextid.cn"}]}'
+            $bytes = [Text.Encoding]::UTF8.GetBytes($canonical)
+            $sha = [Security.Cryptography.SHA256]::Create()
+            try {
+              $digest = (($sha.ComputeHash($bytes) | ForEach-Object {
+                $_.ToString("x2")
+              }) -join "")
+            } finally {
+              $sha.Dispose()
+            }
+            $installed = $canonical.Substring(0, $canonical.Length - 1) +
+              ',"policy_sha256":"' + $digest + '"}'
+            [IO.File]::WriteAllText(
+              $policyPath,
+              $installed + [Environment]::NewLine,
+              [Text.UTF8Encoding]::new($false)
+            )
             $powershell = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
             $previousTesting = $env:CONTEXTID_NATIVE_HOST_TESTING
             $env:CONTEXTID_NATIVE_HOST_TESTING = "1"
